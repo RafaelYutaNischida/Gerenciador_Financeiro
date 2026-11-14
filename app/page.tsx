@@ -14,6 +14,7 @@ import {
   type MovementType,
   type Transaction,
 } from "@/lib/finance";
+import { getDefaultMovementDate } from "@/lib/movement-date";
 
 type Screen = "dashboard" | "transactions";
 type Draft = Omit<Transaction, "id">;
@@ -310,10 +311,12 @@ function TransactionTable({
 
 function MovementForm({
   transaction,
+  defaultDate,
   onClose,
   onSave,
 }: {
   transaction: Transaction | null;
+  defaultDate: string;
   onClose: () => void;
   onSave: (draft: Draft, id?: string) => Promise<void>;
 }) {
@@ -322,7 +325,7 @@ function MovementForm({
   const [amount, setAmount] = useState(
     transaction ? (transaction.amountCents / 100).toFixed(2) : "",
   );
-  const [date, setDate] = useState(transaction?.date ?? todayDate());
+  const [date, setDate] = useState(transaction?.date ?? defaultDate);
   const categories = type === "income" ? incomeCategories : expenseCategories;
   const [category, setCategory] = useState(transaction?.category ?? categories[0]);
   const [notes, setNotes] = useState(transaction?.notes ?? "");
@@ -867,6 +870,7 @@ export default function Home() {
         ? current.map((item) => item.id === id ? result.data : item)
         : [result.data, ...current],
     );
+    setSelectedMonth(result.data.date.slice(0, 7));
     setSummaryRefreshKey((current) => current + 1);
     setFormOpen(false);
     showNotice(id ? "Movimentação atualizada." : "Movimentação adicionada.");
@@ -1166,6 +1170,7 @@ export default function Home() {
       {formOpen && (
         <MovementForm
           transaction={editing}
+          defaultDate={getDefaultMovementDate(selectedMonth, todayDate())}
           onClose={() => setFormOpen(false)}
           onSave={saveTransaction}
         />
