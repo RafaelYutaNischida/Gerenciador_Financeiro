@@ -5,7 +5,7 @@
 - PostgreSQL como banco relacional e Prisma como ORM.
 - Uma única moeda (BRL); o valor não guarda um código de moeda por movimentação.
 - Categorias predefinidas e compartilhadas entre os usuários. A primeira migração as cadastra.
-- O saldo não é armazenado: é calculado a partir das movimentações do usuário e do período.
+- O saldo não é armazenado: o saldo atual é acumulado até hoje e o saldo mensal considera o período selecionado.
 - Não há contas bancárias ou saldo inicial nesta versão.
 
 ## Entidades
@@ -160,20 +160,40 @@ LIMIT $5 OFFSET $6;
 
 O primeiro e o último dia são incluídos. Para o dashboard mensal, `$2` é o primeiro dia do mês e `$3` é o último.
 
-### Calcular receitas, despesas e saldo do período
+### Calcular indicadores do dashboard
+
+Uma única consulta agrega no PostgreSQL em `DECIMAL`, sem converter valores monetários para ponto flutuante. `$1` é o usuário da sessão, `$2` é o primeiro dia do mês selecionado, `$3` é o primeiro dia do mês seguinte (limite exclusivo), e `$4` é a data atual em `America/Sao_Paulo`.
 
 ```sql
 SELECT
-    COALESCE(SUM(m.amount) FILTER (WHERE c.type = 'income'), 0) AS income_total,
-    COALESCE(SUM(m.amount) FILTER (WHERE c.type = 'expense'), 0) AS expense_total,
-    COALESCE(SUM(m.amount) FILTER (WHERE c.type = 'income'), 0)
-      - COALESCE(SUM(m.amount) FILTER (WHERE c.type = 'expense'), 0) AS balance
+    COALESCE(SUM(m.amount) FILTER (
+        WHERE c.type = 'income'
+          AND m.movement_date >= $2::date
+          AND m.movement_date < $3::date
+    ), 0) AS monthly_income,
+    COALESCE(SUM(m.amount) FILTER (
+        WHERE c.type = 'expense'
+          AND m.movement_date >= $2::date
+          AND m.movement_date < $3::date
+    ), 0) AS monthly_expense,
+    COALESCE(SUM(m.amount) FILTER (
+        WHERE c.type = 'income' AND m.movement_date <= $4::date
+    ), 0) AS current_income,
+    COALESCE(SUM(m.amount) FILTER (
+        WHERE c.type = 'expense' AND m.movement_date <= $4::date
+    ), 0) AS current_expense
 FROM movements AS m
 JOIN categories AS c ON c.id = m.category_id
 WHERE m.user_id = $1
-  AND m.movement_date >= $2::date
-  AND m.movement_date <= $3::date;
+  AND (
+      m.movement_date <= $4::date
+      OR (m.movement_date >= $2::date AND m.movement_date < $3::date)
+  );
 ```
+
+O saldo atual é `current_income - current_expense`, considerando todas as movimentações até hoje e excluindo datas futuras. O saldo do mês selecionado é `monthly_income - monthly_expense`; ambos são distintos. Os totais são convertidos para centavos inteiros depois da agregação e a API retorna erro caso excedam o limite inteiro seguro do JavaScript.
+
+O endpoint autenticado `GET /api/summary?month=AAAA-MM` fornece esses quatro indicadores. O seletor existente da interface escolhe o mês e o ano dos três valores mensais. Após criar, editar ou excluir uma movimentação, o Dashboard consulta novamente o resumo. A rota usa SQL parametrizado e limita todos os dados ao usuário da sessão.
 
 ### Criar, editar e excluir
 
@@ -194,6 +214,7 @@ No Prisma, essas operações correspondem a `create`, `findMany`, `update` e `de
 | `POST` | `/api/auth/logout` | Revogar a sessão atual |
 | `GET` | `/api/movements` | Listar movimentações do usuário autenticado |
 | `POST` | `/api/movements` | Cadastrar movimentação |
+| `GET` | `/api/summary?month=AAAA-MM` | Resumo mensal e saldo acumulado até hoje |
 | `GET` | `/api/movements/{id}` | Consultar uma movimentação própria |
 | `PUT` | `/api/movements/{id}` | Substituir os dados de uma movimentação própria |
 | `DELETE` | `/api/movements/{id}` | Excluir uma movimentação própria |

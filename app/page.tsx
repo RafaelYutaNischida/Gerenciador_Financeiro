@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import AuthScreen, { type AuthenticatedUser } from "@/app/auth-screen";
 import { apiRequest, apiRequestNoContent, ApiClientError } from "@/lib/client-api";
+import type { DashboardSummary } from "@/lib/dashboard-summary";
 import {
-  calculateSummary,
   formatCurrency,
   parseAmountToCents,
   type MovementType,
@@ -473,6 +473,10 @@ export default function Home() {
   const [authError, setAuthError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState("");
+  const [summaryRefreshKey, setSummaryRefreshKey] = useState(0);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
   const [typeFilter, setTypeFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -534,13 +538,48 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    if (authStatus !== "ready") {
+      return;
+    }
+
+    let active = true;
+    setSummaryLoading(true);
+    setSummaryError("");
+    setDashboardSummary(null);
+
+    async function loadSummary() {
+      try {
+        const result = await apiRequest<{ data: DashboardSummary }>(
+          `/api/summary?month=${encodeURIComponent(selectedMonth)}`,
+        );
+        if (active) {
+          setDashboardSummary(result.data);
+        }
+      } catch (error) {
+        if (active) {
+          setSummaryError(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível carregar o resumo financeiro.",
+          );
+        }
+      } finally {
+        if (active) {
+          setSummaryLoading(false);
+        }
+      }
+    }
+
+    void loadSummary();
+    return () => {
+      active = false;
+    };
+  }, [authStatus, selectedMonth, summaryRefreshKey]);
+
   const monthTransactions = useMemo(
     () => transactions.filter((item) => item.date.startsWith(selectedMonth)),
     [transactions, selectedMonth],
-  );
-  const summary = useMemo(
-    () => calculateSummary(monthTransactions),
-    [monthTransactions],
   );
   const visibleTransactions = useMemo(
     () =>
@@ -606,6 +645,7 @@ export default function Home() {
       await apiRequestNoContent("/api/auth/logout", { method: "POST" });
       setAuthUser(null);
       setTransactions([]);
+      setDashboardSummary(null);
       setAuthStatus("signed-out");
       setAuthError("");
     } catch (error) {
@@ -640,6 +680,7 @@ export default function Home() {
         ? current.map((item) => item.id === id ? result.data : item)
         : [result.data, ...current],
     );
+    setSummaryRefreshKey((current) => current + 1);
     setFormOpen(false);
     showNotice(id ? "Movimentação atualizada." : "Movimentação adicionada.");
   }
@@ -657,6 +698,7 @@ export default function Home() {
       setTransactions((current) =>
         current.filter((item) => item.id !== transaction.id),
       );
+      setSummaryRefreshKey((current) => current + 1);
       showNotice("Movimentação excluída.");
     } catch (error) {
       showNotice(
@@ -743,6 +785,14 @@ export default function Home() {
               <button onClick={reloadTransactions}>Tentar novamente</button>
             </div>
           )}
+          {screen === "dashboard" && summaryError && (
+            <div className="error-banner" role="alert">
+              <span>{summaryError}</span>
+              <button onClick={() => setSummaryRefreshKey((current) => current + 1)}>
+                Tentar novamente
+              </button>
+            </div>
+          )}
           {screen === "dashboard" ? (
             <>
               <section className="page-heading">
@@ -771,31 +821,65 @@ export default function Home() {
                 </label>
               </div>
 
-              <section className="summary-grid" aria-label="Resumo financeiro do período">
+              <section className="summary-grid" aria-label="Resumo financeiro">
                 <article className="summary-card balance-card">
                   <div className="summary-card-top">
-                    <span className="summary-label">Saldo do período</span>
+                    <span className="summary-label">Saldo atual</span>
                     <span className="summary-icon balance-icon">R$</span>
                   </div>
-                  <strong className="summary-value">{formatCurrency(summary.balanceCents)}</strong>
-                  <span className="summary-caption">{monthLabel(selectedMonth)}</span>
+                  <strong className="summary-value">
+                    {dashboardSummary
+                      ? formatCurrency(dashboardSummary.currentBalanceCents)
+                      : summaryLoading
+                        ? "Carregando..."
+                        : "—"}
+                  </strong>
+                  <span className="summary-caption">Movimentações até hoje</span>
                   <span className="balance-decoration" aria-hidden="true">↗</span>
                 </article>
                 <article className="summary-card">
                   <div className="summary-card-top">
-                    <span className="summary-label">Receitas</span>
+                    <span className="summary-label">Receitas do mês</span>
                     <span className="summary-icon income-icon">↓</span>
                   </div>
-                  <strong className="summary-value">{formatCurrency(summary.incomeCents)}</strong>
-                  <span className="summary-caption">Entradas no período</span>
+                  <strong className="summary-value">
+                    {dashboardSummary
+                      ? formatCurrency(dashboardSummary.monthlyIncomeCents)
+                      : summaryLoading
+                        ? "Carregando..."
+                        : "—"}
+                  </strong>
+                  <span className="summary-caption">{monthLabel(selectedMonth)}</span>
                 </article>
                 <article className="summary-card">
                   <div className="summary-card-top">
-                    <span className="summary-label">Despesas</span>
+                    <span className="summary-label">Despesas do mês</span>
                     <span className="summary-icon expense-icon">↑</span>
                   </div>
-                  <strong className="summary-value">{formatCurrency(summary.expenseCents)}</strong>
-                  <span className="summary-caption">Saídas no período</span>
+                  <strong className="summary-value">
+                    {dashboardSummary
+                      ? formatCurrency(dashboardSummary.monthlyExpenseCents)
+                      : summaryLoading
+                        ? "Carregando..."
+                        : "—"}
+                  </strong>
+                  <span className="summary-caption">{monthLabel(selectedMonth)}</span>
+                </article>
+                <article className="summary-card monthly-balance-card">
+                  <div className="summary-card-top">
+                    <span className="summary-label">Saldo do mês</span>
+                    <span className="summary-icon monthly-balance-icon">=</span>
+                  </div>
+                  <strong className="summary-value">
+                    {dashboardSummary
+                      ? formatCurrency(dashboardSummary.monthlyBalanceCents)
+                      : summaryLoading
+                        ? "Carregando..."
+                        : "—"}
+                  </strong>
+                  <span className="summary-caption">
+                    Receitas menos despesas · {monthLabel(selectedMonth)}
+                  </span>
                 </article>
               </section>
 

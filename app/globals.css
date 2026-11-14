@@ -449,7 +449,7 @@ h2 {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 15px;
   margin-bottom: 29px;
 }
@@ -513,6 +513,12 @@ h2 {
   background: var(--red-soft);
   color: var(--red);
   font-size: 18px;
+}
+
+.monthly-balance-icon {
+  background: #eef1f0;
+  color: #64736d;
+  font-size: 17px;
 }
 
 .summary-value {
@@ -1167,6 +1173,7 @@ h2 {
   }
 
   .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
   }
 
@@ -1322,6 +1329,10 @@ h2 {
   }
 
   .balance-card {
+    grid-column: 1 / -1;
+  }
+
+  .monthly-balance-card {
     grid-column: 1 / -1;
   }
 
