@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import AuthScreen, { type AuthenticatedUser } from "@/app/auth-screen";
 import { apiRequest, apiRequestNoContent, ApiClientError } from "@/lib/client-api";
-import type { DashboardSummary } from "@/lib/dashboard-summary";
+import {
+  type DashboardSummary,
+  calculateExpenseCategoryShares,
+  calculateMonthlyCashFlow,
+} from "@/lib/dashboard-summary";
 import {
   formatCurrency,
   parseAmountToCents,
@@ -13,6 +17,19 @@ import {
 
 type Screen = "dashboard" | "transactions";
 type Draft = Omit<Transaction, "id">;
+
+const expenseChartColors = [
+  "#536b83",
+  "#7890a5",
+  "#8d9a8f",
+  "#657b75",
+  "#a49b88",
+  "#81879b",
+  "#849eae",
+  "#9a8d84",
+  "#758b9b",
+  "#a2aaa4",
+];
 
 const incomeCategories = ["Salário", "Freelance", "Investimentos", "Outros"];
 const expenseCategories = [
@@ -47,6 +64,13 @@ function monthLabel(month: string): string {
   return new Intl.DateTimeFormat("pt-BR", {
     month: "long",
     year: "numeric",
+  }).format(new Date(year, value - 1, 1));
+}
+
+function shortMonthLabel(month: string): string {
+  const [year, value] = month.split("-").map(Number);
+  return new Intl.DateTimeFormat("pt-BR", {
+    month: "short",
   }).format(new Date(year, value - 1, 1));
 }
 
@@ -465,6 +489,188 @@ function MovementForm({
   );
 }
 
+function MonthlyCashFlowChart({
+  transactions,
+  selectedMonth,
+}: {
+  transactions: Transaction[];
+  selectedMonth: string;
+}) {
+  const [monthCount, setMonthCount] = useState<6 | 12>(6);
+  const flow = useMemo(
+    () => calculateMonthlyCashFlow(transactions, selectedMonth, monthCount),
+    [transactions, selectedMonth, monthCount],
+  );
+  const maximumCents = Math.max(
+    0,
+    ...flow.flatMap((item) => [item.incomeCents, item.expenseCents]),
+  );
+  const hasActivity = maximumCents > 0;
+
+  function barHeight(amountCents: number): string {
+    if (amountCents === 0 || maximumCents === 0) {
+      return "0%";
+    }
+    return `${Math.max((amountCents / maximumCents) * 100, 2)}%`;
+  }
+
+  return (
+    <section className="content-card dashboard-panel" aria-labelledby="cash-flow-title">
+      <div className="dashboard-panel-heading">
+        <div>
+          <h2 id="cash-flow-title">Fluxo de caixa</h2>
+          <p>Receitas e despesas por mês</p>
+        </div>
+        <label className="filter-select chart-range-select">
+          <span className="sr-only">Período do fluxo de caixa</span>
+          <select
+            value={monthCount}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (value === 6 || value === 12) {
+                setMonthCount(value);
+              }
+            }}
+          >
+            <option value={6}>6 meses</option>
+            <option value={12}>12 meses</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="chart-legend" aria-hidden="true">
+        <span><i className="legend-income" /> Receitas</span>
+        <span><i className="legend-expense" /> Despesas</span>
+      </div>
+
+      {hasActivity ? (
+        <div className="cash-flow-scroll">
+          <div
+            className="cash-flow-chart"
+            role="img"
+            aria-label={`Comparação de receitas e despesas nos últimos ${monthCount} meses até ${monthLabel(selectedMonth)}.`}
+            style={{ gridTemplateColumns: `repeat(${monthCount}, minmax(0, 1fr))` }}
+          >
+            {flow.map((item) => (
+              <div className="cash-flow-month" key={item.month}>
+                <div className="cash-flow-bars">
+                  <span
+                    className="cash-flow-bar cash-flow-income"
+                    style={{ height: barHeight(item.incomeCents) }}
+                    title={`${monthLabel(item.month)} — receitas: ${formatCurrency(item.incomeCents)}`}
+                  />
+                  <span
+                    className="cash-flow-bar cash-flow-expense"
+                    style={{ height: barHeight(item.expenseCents) }}
+                    title={`${monthLabel(item.month)} — despesas: ${formatCurrency(item.expenseCents)}`}
+                  />
+                </div>
+                <span className="cash-flow-month-label">{shortMonthLabel(item.month)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="dashboard-chart-empty">
+          <strong>Sem movimentações neste período</strong>
+          <span>Cadastre receitas ou despesas para visualizar o fluxo.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ExpenseCategoryChart({
+  transactions,
+  selectedMonth,
+}: {
+  transactions: Transaction[];
+  selectedMonth: string;
+}) {
+  const categories = useMemo(
+    () => calculateExpenseCategoryShares(transactions, selectedMonth),
+    [transactions, selectedMonth],
+  );
+  const totalCents = categories.reduce((total, item) => total + item.amountCents, 0);
+  let currentPercentage = 0;
+  const gradient = categories.length
+    ? `conic-gradient(${categories
+        .map((item, index) => {
+          const start = currentPercentage;
+          currentPercentage += item.percentage;
+          const end = index === categories.length - 1 ? 100 : currentPercentage;
+          const color = expenseChartColors[index % expenseChartColors.length];
+          return `${color} ${start}% ${end}%`;
+        })
+        .join(", ")})`
+    : "conic-gradient(#e9eeeb 0% 100%)";
+
+  return (
+    <section className="content-card dashboard-panel" aria-labelledby="category-chart-title">
+      <div className="dashboard-panel-heading">
+        <div>
+          <h2 id="category-chart-title">Despesas por categoria</h2>
+          <p>{monthLabel(selectedMonth)}</p>
+        </div>
+      </div>
+
+      {categories.length > 0 ? (
+        <div className="category-chart-content">
+          <div
+            className="expense-donut"
+            role="img"
+            aria-label={`Despesas por categoria em ${monthLabel(selectedMonth)}. Total: ${formatCurrency(totalCents)}.`}
+            style={{ background: gradient }}
+          >
+            <div className="expense-donut-center">
+              <span>Total</span>
+              <strong>{formatCurrency(totalCents)}</strong>
+            </div>
+          </div>
+          <ul className="category-legend">
+            {categories.map((item, index) => (
+              <li key={item.category}>
+                <span
+                  className="category-legend-swatch"
+                  style={{ backgroundColor: expenseChartColors[index % expenseChartColors.length] }}
+                  aria-hidden="true"
+                />
+                <span className="category-legend-name">{item.category}</span>
+                <strong>{Math.round(item.percentage)}%</strong>
+                <span className="category-legend-amount">{formatCurrency(item.amountCents)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="dashboard-chart-empty">
+          <strong>Nenhuma despesa neste mês</strong>
+          <span>As despesas cadastradas aparecerão aqui por categoria.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DashboardAvailabilityPanel({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <section className="content-card dashboard-availability-panel">
+      <div className="availability-panel-top">
+        <span className="availability-indicator" aria-hidden="true">—</span>
+        <span className="availability-label">Sem dados disponíveis</span>
+      </div>
+      <h2>{title}</h2>
+      <p>{description}</p>
+    </section>
+  );
+}
+
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -809,7 +1015,7 @@ export default function Home() {
               <div className="section-toolbar">
                 <div>
                   <h2>Resumo financeiro</h2>
-                  <p>Uma visão clara do seu dinheiro</p>
+                  <p>Movimentações registradas; sem separação por conta ou cartão.</p>
                 </div>
                 <label className="month-picker">
                   <span className="sr-only">Selecionar mês do resumo</span>
@@ -881,6 +1087,35 @@ export default function Home() {
                     Receitas menos despesas · {monthLabel(selectedMonth)}
                   </span>
                 </article>
+              </section>
+
+              <section className="dashboard-charts-grid" aria-label="Análises financeiras">
+                <MonthlyCashFlowChart
+                  transactions={transactions}
+                  selectedMonth={selectedMonth}
+                />
+                <ExpenseCategoryChart
+                  transactions={transactions}
+                  selectedMonth={selectedMonth}
+                />
+              </section>
+
+              <section
+                className="dashboard-availability-grid"
+                aria-label="Orçamentos, metas e vencimentos"
+              >
+                <DashboardAvailabilityPanel
+                  title="Limites de gastos"
+                  description="O cadastro de orçamentos por categoria ainda não existe, então não há limites para comparar."
+                />
+                <DashboardAvailabilityPanel
+                  title="Metas financeiras"
+                  description="Metas de reserva ou quitação ainda não são cadastradas no FinTrack."
+                />
+                <DashboardAvailabilityPanel
+                  title="Próximos vencimentos"
+                  description="As movimentações têm data de registro, mas ainda não possuem data de vencimento."
+                />
               </section>
 
               <section className="content-card recent-card">

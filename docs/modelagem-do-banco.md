@@ -195,6 +195,8 @@ O saldo atual é `current_income - current_expense`, considerando todas as movim
 
 O endpoint autenticado `GET /api/summary?month=AAAA-MM` fornece esses quatro indicadores. O seletor existente da interface escolhe o mês e o ano dos três valores mensais. Após criar, editar ou excluir uma movimentação, o Dashboard consulta novamente o resumo. A rota usa SQL parametrizado e limita todos os dados ao usuário da sessão.
 
+O fluxo de caixa (6 ou 12 meses até o mês selecionado) e a distribuição de despesas por categoria são calculados a partir da lista de movimentações já carregada pela API autenticada `GET /api/movements`; as agregações usam centavos inteiros e são recalculadas após as operações do CRUD. Não há filtro por conta/cartão porque as movimentações ainda não pertencem a contas separadas. Orçamentos, metas e datas de vencimento aparecem como indisponíveis: esses dados ainda não existem no modelo.
+
 ### Criar, editar e excluir
 
 - **Create:** `INSERT` em `movements` com uma categoria do tipo escolhido.

@@ -1,4 +1,5 @@
 import { ApiError } from "./api-errors";
+import type { Transaction } from "./finance";
 
 export type DashboardSummary = {
   currentBalanceCents: number;
@@ -13,6 +14,96 @@ export type SummaryAggregate = {
   currentIncome: string;
   currentExpense: string;
 };
+
+export type MonthlyCashFlow = {
+  month: string;
+  incomeCents: number;
+  expenseCents: number;
+};
+
+export type ExpenseCategoryShare = {
+  category: string;
+  amountCents: number;
+  percentage: number;
+};
+
+function shiftMonth(month: string, offset: number): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const absoluteMonth = year * 12 + monthNumber - 1 + offset;
+  const shiftedYear = Math.floor(absoluteMonth / 12);
+  const shiftedMonth = (absoluteMonth % 12) + 1;
+  return `${String(shiftedYear).padStart(4, "0")}-${String(shiftedMonth).padStart(2, "0")}`;
+}
+
+export function calculateMonthlyCashFlow(
+  transactions: Transaction[],
+  endMonth: string,
+  monthCount: 6 | 12,
+): MonthlyCashFlow[] {
+  getMonthRange(endMonth);
+  const months = Array.from({ length: monthCount }, (_, index) =>
+    shiftMonth(endMonth, index - monthCount + 1),
+  );
+  const totals = new Map(
+    months.map((month) => [
+      month,
+      { month, incomeCents: 0, expenseCents: 0 },
+    ]),
+  );
+
+  for (const transaction of transactions) {
+    const month = transaction.date.slice(0, 7);
+    const total = totals.get(month);
+    if (!total) {
+      continue;
+    }
+
+    if (transaction.type === "income") {
+      total.incomeCents += transaction.amountCents;
+    } else {
+      total.expenseCents += transaction.amountCents;
+    }
+  }
+
+  return months.map((month) => {
+    const total = totals.get(month);
+    if (!total) {
+      throw new Error(`O mês ${month} não foi incluído no intervalo do gráfico.`);
+    }
+    return total;
+  });
+}
+
+export function calculateExpenseCategoryShares(
+  transactions: Transaction[],
+  month: string,
+): ExpenseCategoryShare[] {
+  getMonthRange(month);
+  const totals = new Map<string, number>();
+
+  for (const transaction of transactions) {
+    if (transaction.type !== "expense" || !transaction.date.startsWith(month)) {
+      continue;
+    }
+    totals.set(
+      transaction.category,
+      (totals.get(transaction.category) ?? 0) + transaction.amountCents,
+    );
+  }
+
+  const totalCents = [...totals.values()].reduce((total, amount) => total + amount, 0);
+  return [...totals.entries()]
+    .map(([category, amountCents]) => ({
+      category,
+      amountCents,
+      percentage: totalCents > 0 ? (amountCents / totalCents) * 100 : 0,
+    }))
+    .sort(
+      (first, second) =>
+        second.amountCents - first.amountCents ||
+        first.category.localeCompare(second.category, "pt-BR"),
+    );
+}
 
 export function getMonthRange(month: string): {
   start: string;
