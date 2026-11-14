@@ -3,6 +3,7 @@ node_modules
 out
 *.tsbuildinfo
 next-env.d.ts
+generated/prisma
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
