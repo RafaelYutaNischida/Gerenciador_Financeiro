@@ -7,6 +7,7 @@ export type Transaction = {
   type: MovementType;
   date: string;
   category: string;
+  notes?: string;
 };
 
 export type FinanceSummary = {
@@ -14,6 +15,8 @@ export type FinanceSummary = {
   expenseCents: number;
   balanceCents: number;
 };
+
+const MAX_AMOUNT_CENTS = 999_999_999_999;
 
 export function parseAmountToCents(value: string): number | null {
   const normalized = value.trim().replace(",", ".");
@@ -31,7 +34,9 @@ export function parseAmountToCents(value: string): number | null {
   }
 
   const cents = wholePart * 100 + decimalPart;
-  return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+  return Number.isSafeInteger(cents) && cents > 0 && cents <= MAX_AMOUNT_CENTS
+    ? cents
+    : null;
 }
 
 export function calculateSummary(

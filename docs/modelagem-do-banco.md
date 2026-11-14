@@ -21,6 +21,16 @@
 | `created_at` | `TIMESTAMPTZ(3)` | Não | Criado com o registro |
 | `updated_at` | `TIMESTAMPTZ(3)` | Não | Atualizado pelo Prisma |
 
+### `sessions`
+
+| Coluna | Tipo PostgreSQL | Nulo? | Regra |
+|---|---|---:|---|
+| `id` | `UUID` | Não | Chave primária |
+| `token_hash` | `CHAR(64)` | Não | Hash SHA-256 único do token; o token puro fica apenas no cookie |
+| `user_id` | `UUID` | Não | Chave estrangeira para `users.id` |
+| `expires_at` | `TIMESTAMPTZ(3)` | Não | Prazo de validade da sessão |
+| `created_at` | `TIMESTAMPTZ(3)` | Não | Instante em que a sessão foi criada |
+
 ### `categories`
 
 | Coluna | Tipo PostgreSQL | Nulo? | Regra |
@@ -53,6 +63,7 @@ O enum `movement_type` limita os valores a `income` e `expense`.
 ```mermaid
 erDiagram
     USERS ||--o{ MOVEMENTS : registra
+    USERS ||--o{ SESSIONS : autentica
     CATEGORIES ||--o{ MOVEMENTS : classifica
 
     USERS {
@@ -62,6 +73,14 @@ erDiagram
         VARCHAR password_hash
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
+    }
+
+    SESSIONS {
+        UUID id PK
+        CHAR token_hash UK
+        UUID user_id FK
+        TIMESTAMPTZ expires_at
+        TIMESTAMPTZ created_at
     }
 
     CATEGORIES {
@@ -89,6 +108,7 @@ O tipo da movimentação é o tipo de sua categoria. Assim, não há uma segunda
 ## Relacionamentos e cardinalidade
 
 - **Usuário 1:N Movimentações:** um usuário pode não ter ou ter várias movimentações; cada movimentação pertence a exatamente um usuário. A exclusão do usuário remove suas movimentações (`ON DELETE CASCADE`).
+- **Usuário 1:N Sessões:** um usuário pode ter várias sessões; cada sessão pertence a exatamente um usuário e é removida junto com ele.
 - **Categoria 1:N Movimentações:** uma categoria pode classificar nenhuma ou várias movimentações; cada movimentação tem exatamente uma categoria. Uma categoria em uso não pode ser excluída (`ON DELETE RESTRICT`).
 - Não existe relacionamento direto entre usuários e categorias: as categorias iniciais são compartilhadas.
 
@@ -106,7 +126,8 @@ As restrições são aplicadas em mais de uma camada:
 - `PRIMARY KEY`, `FOREIGN KEY`, `UNIQUE` e `NOT NULL` protegem identidade e relações.
 - O enum limita os tipos de movimentação.
 - A migração inicial adiciona `CHECK` para valor maior que zero e nomes/descrições não vazios.
-- O backend ainda deve validar tamanho, formato de e-mail e categoria, além de normalizar e-mail para minúsculas.
+- O backend valida tamanho, formato dos valores/datas/categorias e normaliza e-mail para minúsculas.
+- Senhas são armazenadas com scrypt; sessões usam tokens aleatórios em cookie `HttpOnly`, enquanto somente o hash do token é persistido.
 - Toda leitura, edição ou exclusão de movimentação deve filtrar pelo `user_id` da sessão autenticada. Não se deve confiar em um `user_id` enviado livremente pelo navegador.
 - A aplicação usa BRL em todo o MVP. Se moedas forem adicionadas futuramente, será necessário persistir a moeda e definir regras cambiais.
 
@@ -161,11 +182,32 @@ WHERE m.user_id = $1
 - **Update:** `UPDATE ... WHERE id = $1 AND user_id = $2`; verificar se uma linha foi alterada.
 - **Delete:** `DELETE ... WHERE id = $1 AND user_id = $2`, somente após confirmação do usuário.
 
-No Prisma, essas operações correspondem a `create`, `findMany`, `updateMany` e `deleteMany`. Para o resumo, filtre `movement.category.type` para cada total e some `amount`. A resposta de edição/exclusão deve distinguir “registro não encontrado ou não pertence ao usuário” de sucesso.
+No Prisma, essas operações correspondem a `create`, `findMany`, `update` e `delete`. As operações de edição e exclusão sempre incluem o usuário autenticado no filtro; um registro de outra conta responde como não encontrado.
+
+## API REST implementada
+
+| Método | Rota | Responsabilidade |
+|---|---|---|
+| `POST` | `/api/auth/register` | Criar conta e iniciar sessão |
+| `POST` | `/api/auth/login` | Validar credenciais e iniciar sessão |
+| `GET` | `/api/auth/session` | Consultar a conta da sessão atual |
+| `POST` | `/api/auth/logout` | Revogar a sessão atual |
+| `GET` | `/api/movements` | Listar movimentações do usuário autenticado |
+| `POST` | `/api/movements` | Cadastrar movimentação |
+| `GET` | `/api/movements/{id}` | Consultar uma movimentação própria |
+| `PUT` | `/api/movements/{id}` | Substituir os dados de uma movimentação própria |
+| `DELETE` | `/api/movements/{id}` | Excluir uma movimentação própria |
+
+O corpo de cadastro/edição recebe `description`, `amountCents` (inteiro em centavos), `type`, `date` (`AAAA-MM-DD`), `category` e `notes` opcional. Respostas de erro usam `{ "error": { "code": "...", "message": "...", "details": {} } }`. O navegador não escolhe o `user_id`; ele é obtido a partir da sessão validada no servidor.
+
+Para executar no Windows, copie `.env.example` para `.env` (`Copy-Item .env.example .env`), ajuste `DATABASE_URL` e confirme que o serviço PostgreSQL está iniciado e que o banco/usuário da URL existem. Aplique as migrações com `npm run db:migrate` e inicie com `npm run dev`. Crie uma conta pela tela inicial e teste cadastro, consulta, edição e exclusão; recarregar a página confirma que as alterações foram persistidas. `npm test` executa os testes unitários de cálculos e validação.
 
 ## Arquivos da implementação
 
 - `prisma/schema.prisma`: modelos, tipos e relacionamentos.
 - `prisma/migrations/20261113215000_init/migration.sql`: criação das tabelas, restrições `CHECK` e categorias iniciais.
+- `prisma/migrations/20261113223000_create_sessions/migration.sql`: criação da tabela de sessões.
 - `prisma.config.ts`: configuração do Prisma CLI.
+- `app/api/`: rotas de autenticação e movimentações.
+- `lib/`: cliente Prisma, autenticação, validação e conversão de valores.
 - `.env.example`: formato local esperado para `DATABASE_URL`; não contém credenciais reais.

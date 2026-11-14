@@ -16,6 +16,8 @@ describe("parseAmountToCents", () => {
     expect(parseAmountToCents("-12")).toBeNull();
     expect(parseAmountToCents("1.234")).toBeNull();
     expect(parseAmountToCents("abc")).toBeNull();
+    expect(parseAmountToCents("10000000000")).toBeNull();
+    expect(parseAmountToCents("9999999999.99")).toBe(999999999999);
   });
 });
 

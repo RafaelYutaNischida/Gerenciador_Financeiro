@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import AuthScreen, { type AuthenticatedUser } from "@/app/auth-screen";
+import { apiRequest, apiRequestNoContent, ApiClientError } from "@/lib/client-api";
 import {
   calculateSummary,
   formatCurrency,
@@ -21,54 +23,6 @@ const expenseCategories = [
   "Lazer",
   "Outros",
 ];
-
-const initialTransactions: Transaction[] = [
-  {
-    id: "salary",
-    description: "Salário",
-    amountCents: 520000,
-    type: "income",
-    date: dateInCurrentMonth(5),
-    category: "Salário",
-  },
-  {
-    id: "rent",
-    description: "Aluguel",
-    amountCents: 180000,
-    type: "expense",
-    date: dateInCurrentMonth(7),
-    category: "Moradia",
-  },
-  {
-    id: "groceries",
-    description: "Compras do mês",
-    amountCents: 42570,
-    type: "expense",
-    date: dateInCurrentMonth(10),
-    category: "Alimentação",
-  },
-  {
-    id: "freelance",
-    description: "Projeto freelance",
-    amountCents: 140000,
-    type: "income",
-    date: dateInCurrentMonth(12),
-    category: "Freelance",
-  },
-  {
-    id: "internet",
-    description: "Internet",
-    amountCents: 9990,
-    type: "expense",
-    date: dateInCurrentMonth(16),
-    category: "Moradia",
-  },
-];
-
-function dateInCurrentMonth(day: number): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
 
 function currentMonth(): string {
   const now = new Date();
@@ -162,10 +116,14 @@ function Sidebar({
   screen,
   onNavigate,
   onCreate,
+  user,
+  onLogout,
 }: {
   screen: Screen;
   onNavigate: (screen: Screen) => void;
   onCreate: () => void;
+  user: AuthenticatedUser;
+  onLogout: () => void;
 }) {
   return (
     <aside className="sidebar">
@@ -202,12 +160,14 @@ function Sidebar({
           <p>Pequenos passos hoje, mais tranquilidade amanhã.</p>
         </div>
         <div className="profile">
-          <div className="avatar">A</div>
+          <div className="avatar">{user.name.charAt(0).toUpperCase()}</div>
           <div className="profile-copy">
-            <strong>Alex Silva</strong>
-            <span>Conta pessoal</span>
+            <strong>{user.name}</strong>
+            <span>{user.email}</span>
           </div>
-          <span className="profile-menu" aria-hidden="true">···</span>
+          <button className="profile-menu" onClick={onLogout}>
+            Sair
+          </button>
         </div>
       </div>
       <button
@@ -226,17 +186,23 @@ function TransactionTable({
   transactions,
   onEdit,
   onDelete,
+  loading = false,
 }: {
   transactions: Transaction[];
   onEdit: (transaction: Transaction) => void;
   onDelete: (transaction: Transaction) => void;
+  loading?: boolean;
 }) {
   if (transactions.length === 0) {
     return (
       <div className="empty-state">
         <span className="empty-icon"><Icon name="arrows" size={24} /></span>
-        <strong>Nenhuma movimentação por aqui</strong>
-        <p>Experimente ajustar os filtros ou cadastre uma movimentação.</p>
+        <strong>
+          {loading ? "Carregando movimentações..." : "Nenhuma movimentação por aqui"}
+        </strong>
+        {!loading && (
+          <p>Experimente ajustar os filtros ou cadastre uma movimentação.</p>
+        )}
       </div>
     );
   }
@@ -325,7 +291,7 @@ function MovementForm({
 }: {
   transaction: Transaction | null;
   onClose: () => void;
-  onSave: (draft: Draft, id?: string) => void;
+  onSave: (draft: Draft, id?: string) => Promise<void>;
 }) {
   const [type, setType] = useState<MovementType>(transaction?.type ?? "expense");
   const [description, setDescription] = useState(transaction?.description ?? "");
@@ -335,9 +301,11 @@ function MovementForm({
   const [date, setDate] = useState(transaction?.date ?? todayDate());
   const categories = type === "income" ? incomeCategories : expenseCategories;
   const [category, setCategory] = useState(transaction?.category ?? categories[0]);
+  const [notes, setNotes] = useState(transaction?.notes ?? "");
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const amountCents = parseAmountToCents(amount);
 
@@ -355,16 +323,28 @@ function MovementForm({
     }
 
     setError("");
-    onSave(
-      {
-        description: description.trim(),
-        amountCents,
-        type,
-        date,
-        category,
-      },
-      transaction?.id,
-    );
+    setSaving(true);
+    try {
+      await onSave(
+        {
+          description: description.trim(),
+          amountCents,
+          type,
+          date,
+          category,
+          notes,
+        },
+        transaction?.id,
+      );
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Não foi possível salvar a movimentação.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -418,7 +398,7 @@ function MovementForm({
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             placeholder="Ex.: Conta de energia"
-            maxLength={80}
+            maxLength={120}
             autoFocus
           />
 
@@ -456,13 +436,27 @@ function MovementForm({
             {categories.map((option) => <option key={option}>{option}</option>)}
           </select>
 
+          <label className="field-label" htmlFor="notes">Observação (opcional)</label>
+          <textarea
+            id="notes"
+            className="form-input form-textarea"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            maxLength={500}
+            rows={3}
+          />
+
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="form-footer">
             <button type="button" className="button button-secondary" onClick={onClose}>
               Cancelar
             </button>
-            <button type="submit" className="button button-primary">
-              {transaction ? "Salvar alterações" : "Adicionar movimentação"}
+            <button type="submit" className="button button-primary" disabled={saving}>
+              {saving
+                ? "Salvando..."
+                : transaction
+                  ? "Salvar alterações"
+                  : "Adicionar movimentação"}
             </button>
           </div>
         </form>
@@ -473,13 +467,72 @@ function MovementForm({
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("dashboard");
-  const [transactions, setTransactions] = useState(initialTransactions);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [authStatus, setAuthStatus] = useState<"loading" | "signed-out" | "ready">("loading");
+  const [authUser, setAuthUser] = useState<AuthenticatedUser | null>(null);
+  const [authError, setAuthError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
   const [typeFilter, setTypeFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const [noticeIsError, setNoticeIsError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadAccount() {
+      let session: { user: AuthenticatedUser };
+      try {
+        session = await apiRequest<{ user: AuthenticatedUser }>("/api/auth/session");
+      } catch (error) {
+        if (!active) return;
+        if (error instanceof ApiClientError && error.status === 401) {
+          setAuthStatus("signed-out");
+        } else {
+          setAuthError(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível conectar ao servidor.",
+          );
+          setAuthStatus("signed-out");
+        }
+        setLoadingTransactions(false);
+        return;
+      }
+
+      if (!active) return;
+      setAuthUser(session.user);
+      try {
+        const result = await apiRequest<{ data: Transaction[] }>("/api/movements");
+        if (active) {
+          setTransactions(result.data);
+          setLoadError("");
+        }
+      } catch (error) {
+        if (active) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível carregar as movimentações.",
+          );
+        }
+      } finally {
+        if (active) {
+          setLoadingTransactions(false);
+          setAuthStatus("ready");
+        }
+      }
+    }
+
+    void loadAccount();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const monthTransactions = useMemo(
     () => transactions.filter((item) => item.date.startsWith(selectedMonth)),
@@ -505,9 +558,62 @@ export default function Home() {
     [monthTransactions],
   );
 
-  function showNotice(message: string) {
+  function showNotice(message: string, isError = false) {
     setNotice(message);
+    setNoticeIsError(isError);
     window.setTimeout(() => setNotice(""), 3000);
+  }
+
+  async function handleAuthenticated(user: AuthenticatedUser) {
+    setAuthUser(user);
+    setAuthStatus("ready");
+    setAuthError("");
+    setLoadingTransactions(true);
+    try {
+      const result = await apiRequest<{ data: Transaction[] }>("/api/movements");
+      setTransactions(result.data);
+      setLoadError("");
+    } catch (error) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível carregar as movimentações.",
+      );
+    } finally {
+      setLoadingTransactions(false);
+    }
+  }
+
+  async function reloadTransactions() {
+    setLoadingTransactions(true);
+    setLoadError("");
+    try {
+      const result = await apiRequest<{ data: Transaction[] }>("/api/movements");
+      setTransactions(result.data);
+    } catch (error) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível carregar as movimentações.",
+      );
+    } finally {
+      setLoadingTransactions(false);
+    }
+  }
+
+  async function logout() {
+    try {
+      await apiRequestNoContent("/api/auth/logout", { method: "POST" });
+      setAuthUser(null);
+      setTransactions([]);
+      setAuthStatus("signed-out");
+      setAuthError("");
+    } catch (error) {
+      showNotice(
+        error instanceof Error ? error.message : "Não foi possível sair da conta.",
+        true,
+      );
+    }
   }
 
   function openCreateForm() {
@@ -520,33 +626,44 @@ export default function Home() {
     setFormOpen(true);
   }
 
-  function saveTransaction(draft: Draft, id?: string) {
-    const nextTransaction: Transaction = {
-      id: id ?? crypto.randomUUID(),
-      description: draft.description,
-      amountCents: draft.amountCents,
-      type: draft.type,
-      date: draft.date,
-      category: draft.category,
-    };
+  async function saveTransaction(draft: Draft, id?: string) {
+    const result = await apiRequest<{ data: Transaction }>(
+      id ? `/api/movements/${id}` : "/api/movements",
+      {
+        method: id ? "PUT" : "POST",
+        body: JSON.stringify(draft),
+      },
+    );
 
     setTransactions((current) =>
       id
-        ? current.map((item) => item.id === id ? nextTransaction : item)
-        : [nextTransaction, ...current],
+        ? current.map((item) => item.id === id ? result.data : item)
+        : [result.data, ...current],
     );
     setFormOpen(false);
     showNotice(id ? "Movimentação atualizada." : "Movimentação adicionada.");
   }
 
-  function deleteTransaction(transaction: Transaction) {
+  async function deleteTransaction(transaction: Transaction) {
     const confirmed = window.confirm(
       `Excluir "${transaction.description}"? Esta ação não pode ser desfeita.`,
     );
     if (!confirmed) return;
 
-    setTransactions((current) => current.filter((item) => item.id !== transaction.id));
-    showNotice("Movimentação excluída.");
+    try {
+      await apiRequestNoContent(`/api/movements/${transaction.id}`, {
+        method: "DELETE",
+      });
+      setTransactions((current) =>
+        current.filter((item) => item.id !== transaction.id),
+      );
+      showNotice("Movimentação excluída.");
+    } catch (error) {
+      showNotice(
+        error instanceof Error ? error.message : "Não foi possível excluir a movimentação.",
+        true,
+      );
+    }
   }
 
   const today = new Intl.DateTimeFormat("pt-BR", {
@@ -555,9 +672,32 @@ export default function Home() {
     month: "long",
   }).format(new Date());
 
+  if (authStatus === "loading") {
+    return (
+      <main className="auth-page">
+        <p className="auth-loading" role="status">Conectando à sua conta...</p>
+      </main>
+    );
+  }
+
+  if (authStatus === "signed-out" || !authUser) {
+    return (
+      <AuthScreen
+        initialError={authError}
+        onAuthenticated={handleAuthenticated}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
-      <Sidebar screen={screen} onNavigate={setScreen} onCreate={openCreateForm} />
+      <Sidebar
+        screen={screen}
+        onNavigate={setScreen}
+        onCreate={openCreateForm}
+        user={authUser}
+        onLogout={logout}
+      />
       <main className="main-content">
         <header className="topbar">
           <div className="mobile-brand">
@@ -569,8 +709,8 @@ export default function Home() {
             <strong>{screen === "dashboard" ? "Visão geral" : "Movimentações"}</strong>
           </div>
           <div className="topbar-right">
-            <span className="demo-badge"><span /> Demonstração</span>
-            <span className="topbar-avatar">A</span>
+            <span className="topbar-avatar">{authUser.name.charAt(0).toUpperCase()}</span>
+            <button className="logout-button" onClick={logout}>Sair</button>
           </div>
         </header>
         <nav className="mobile-nav" aria-label="Navegação principal">
@@ -597,12 +737,18 @@ export default function Home() {
         </nav>
 
         <div className="page-content">
+          {loadError && (
+            <div className="error-banner" role="alert">
+              <span>{loadError}</span>
+              <button onClick={reloadTransactions}>Tentar novamente</button>
+            </div>
+          )}
           {screen === "dashboard" ? (
             <>
               <section className="page-heading">
                 <div>
                   <p className="eyebrow">{today}</p>
-                  <h1>Bom dia, Alex <span className="wave">✦</span></h1>
+                  <h1>Olá, {authUser.name.split(" ")[0]} <span className="wave">✦</span></h1>
                   <p className="page-description">Aqui está o resumo das suas finanças.</p>
                 </div>
                 <button className="button button-primary" onClick={openCreateForm}>
@@ -667,6 +813,7 @@ export default function Home() {
                   transactions={recentTransactions}
                   onEdit={openEditForm}
                   onDelete={deleteTransaction}
+                  loading={loadingTransactions}
                 />
               </section>
             </>
@@ -722,13 +869,14 @@ export default function Home() {
                   transactions={visibleTransactions}
                   onEdit={openEditForm}
                   onDelete={deleteTransaction}
+                  loading={loadingTransactions}
                 />
               </section>
             </>
           )}
           <footer className="page-footer">
             <span>FinTrack <span aria-hidden="true">·</span> Seu dinheiro, com mais clareza.</span>
-            <span className="temporary-note">Versão demonstrativa — dados não são salvos.</span>
+            <span className="temporary-note">Movimentações salvas na sua conta.</span>
           </footer>
         </div>
       </main>
@@ -740,7 +888,11 @@ export default function Home() {
           onSave={saveTransaction}
         />
       )}
-      {notice && <div className="toast" role="status">{notice}</div>}
+      {notice && (
+        <div className={`toast${noticeIsError ? " toast-error" : ""}`} role="status">
+          {notice}
+        </div>
+      )}
     </div>
   );
 }
