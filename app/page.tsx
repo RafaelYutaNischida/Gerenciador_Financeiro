@@ -652,25 +652,6 @@ function ExpenseCategoryChart({
   );
 }
 
-function DashboardAvailabilityPanel({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <section className="content-card dashboard-availability-panel">
-      <div className="availability-panel-top">
-        <span className="availability-indicator" aria-hidden="true">—</span>
-        <span className="availability-label">Sem dados disponíveis</span>
-      </div>
-      <h2>{title}</h2>
-      <p>{description}</p>
-    </section>
-  );
-}
-
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -1097,24 +1078,6 @@ export default function Home() {
                 <ExpenseCategoryChart
                   transactions={transactions}
                   selectedMonth={selectedMonth}
-                />
-              </section>
-
-              <section
-                className="dashboard-availability-grid"
-                aria-label="Orçamentos, metas e vencimentos"
-              >
-                <DashboardAvailabilityPanel
-                  title="Limites de gastos"
-                  description="O cadastro de orçamentos por categoria ainda não existe, então não há limites para comparar."
-                />
-                <DashboardAvailabilityPanel
-                  title="Metas financeiras"
-                  description="Metas de reserva ou quitação ainda não são cadastradas no FinTrack."
-                />
-                <DashboardAvailabilityPanel
-                  title="Próximos vencimentos"
-                  description="As movimentações têm data de registro, mas ainda não possuem data de vencimento."
                 />
               </section>
 

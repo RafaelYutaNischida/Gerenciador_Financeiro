@@ -782,56 +782,6 @@ h2 {
   font-size: 9px;
 }
 
-.dashboard-availability-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 15px;
-  margin-bottom: 15px;
-}
-
-.dashboard-availability-panel {
-  min-height: 148px;
-  padding: 17px 18px;
-}
-
-.availability-panel-top {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 13px;
-}
-
-.availability-indicator {
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  border-radius: 6px;
-  background: #f0f3f2;
-  color: #899590;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.availability-label {
-  color: #929d97;
-  font-size: 9px;
-  font-weight: 600;
-}
-
-.dashboard-availability-panel h2 {
-  margin: 0 0 7px;
-  color: #415058;
-  font-size: 12px;
-}
-
-.dashboard-availability-panel p {
-  margin: 0;
-  color: #89959a;
-  font-size: 10px;
-  line-height: 1.55;
-}
-
 .content-card {
   overflow: hidden;
   border: 1px solid #e9eeeb;
@@ -1465,11 +1415,6 @@ h2 {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-availability-grid {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
   .table-head,
   .table-row {
     grid-template-columns: minmax(135px, 1.6fr) minmax(80px, 0.9fr) minmax(90px, 1fr) minmax(105px, 1fr) 65px;
@@ -1635,11 +1580,6 @@ h2 {
   .category-legend {
     width: 100%;
     max-height: 160px;
-  }
-
-  .dashboard-availability-panel {
-    min-height: 0;
-    padding: 15px;
   }
 
   .balance-card {
