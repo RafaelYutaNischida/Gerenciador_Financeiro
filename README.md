@@ -93,6 +93,20 @@ Os comandos abaixo usam o PowerShell no Windows.
 
    Acesse [http://localhost:3000](http://localhost:3000) e crie uma conta pela tela inicial.
 
+## Deploy na Vercel
+
+1. Importe o repositório na Vercel e mantenha o comando de build padrão (`npm run build`). Esse comando gera o cliente Prisma antes de compilar o Next.js.
+2. Em **Project Settings → Environment Variables**, configure `DATABASE_URL` com a URL de um banco PostgreSQL acessível pela Vercel. Não use `localhost` para um banco que esteja apenas no seu computador.
+3. Antes de usar a aplicação, aplique as migrações no banco de produção a partir de um ambiente seguro em que `DATABASE_URL` aponte para esse banco — não use a URL local do `.env`:
+
+   ```powershell
+   npx prisma migrate deploy
+   ```
+
+4. Faça um novo deploy após configurar a variável de ambiente.
+
+Não publique credenciais do banco no repositório nem em logs.
+
 ### Migrações e observação sobre o banco
 
 O histórico versionado contém uma migração legada que cria tabelas de limites, metas e vencimentos. Essas áreas não estão disponíveis na interface ou na API atual e seus modelos não fazem parte do `schema.prisma`. A migração é mantida para preservar o histórico já aplicado; em uma instalação limpa, ela também cria essas tabelas.
@@ -111,7 +125,7 @@ npm run build
 - `npm test`: testes unitários com Vitest.
 - `npx tsc --noEmit`: verificação de tipos TypeScript.
 - `npm run db:validate`: validação do schema Prisma.
-- `npm run build`: build de produção do Next.js.
+- `npm run build`: gera o cliente Prisma e executa o build de produção do Next.js.
 
 ## Estrutura do projeto
 
