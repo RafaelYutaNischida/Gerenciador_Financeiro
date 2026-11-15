@@ -133,11 +133,35 @@ prisma/
 docs/
   modelagem-do-banco.md
                        Entidades, regras e documentação da API
+  images/              Capturas de tela anonimizadas
 ```
 
 ## Capturas de tela
 
-As capturas ainda não estão incluídas. Antes de adicioná-las ao portfólio, use uma conta demonstrativa e dados fictícios para não expor informações pessoais ou financeiras.
+As capturas abaixo mostram as principais telas do FinTrack. Dados pessoais e valores financeiros foram anonimizados para a publicação.
+
+### Dashboard
+
+![Dashboard do FinTrack com resumo financeiro e gráficos](docs/images/dashboard.png)
+
+### Movimentações
+
+![Lista de movimentações com busca e filtros](docs/images/movements.png)
+
+### Cadastro de movimentação
+
+![Formulário para cadastrar uma receita ou despesa](docs/images/movement-form.png)
+
+### Login e cadastro
+
+<p align="center">
+  <img src="docs/images/login.png" alt="Tela de login do FinTrack" width="32%">
+  <img src="docs/images/register.png" alt="Tela de cadastro do FinTrack" width="32%">
+</p>
+
+### Filtro por mês
+
+![Seletor de mês usado para consultar movimentações e indicadores](docs/images/month-picker.png)
 
 ## Escopo e próximos passos
 
