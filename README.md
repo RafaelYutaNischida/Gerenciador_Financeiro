@@ -2,6 +2,8 @@
 
 Gerenciador financeiro pessoal para registrar receitas e despesas, acompanhar o saldo e visualizar resumos financeiros em um dashboard.
 
+**Acesse a aplicação:** [FinTrack](https://gerenciador-financeiro-two-chi.vercel.app)
+
 ## Funcionalidades
 
 - Cadastro, login e logout de usuários.
